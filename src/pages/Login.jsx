@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api';
 
-export default function Login({ onLoggedIn }) {
+export default function Login({ onLoggedIn, onGoSignup }) {
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -62,6 +62,16 @@ export default function Login({ onLoggedIn }) {
           {loading ? 'Signing in...' : 'Sign in'}
         </button>
       </form>
+
+      {onGoSignup && (
+        <p
+          className="login-sub"
+          style={{ marginTop: 18, cursor: 'pointer', textDecoration: 'underline' }}
+          onClick={onGoSignup}
+        >
+          New vendor? Sign up
+        </p>
+      )}
     </div>
   );
 }
