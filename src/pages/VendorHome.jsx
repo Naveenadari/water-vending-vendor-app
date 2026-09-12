@@ -5,8 +5,8 @@ import React, { useEffect, useRef, useState } from 'react';
 // Per earlier work, api.js and socket.js are already generic/valve-aware
 // and need NO changes. Wire them in here:
 // =====================================================================
-import { api } from '../api';       // expects api.getDevice(deviceId) -> GET /api/devices/:id
-import { socket } from '../socket'; // expects socket.on(event, cb) and socket.emit('command', payload)
+import { api } from '../api';
+import { getSocket, sendCommand } from '../socket';
 
 // -----------------------------------------------------------------
 // Constants (must match firmware: #define PULSES_PER_LITER 240.0)
@@ -19,20 +19,14 @@ const VALVE_NORMAL = 0;
 const VALVE_COOLING = 1;
 const VALVE_NAME = { [VALVE_NORMAL]: 'Normal water', [VALVE_COOLING]: 'Cooling water' };
 
-// -----------------------------------------------------------------
-// sendCommand — every outgoing message matches the shape your
-// deviceWs.js already forwards straight to the ESP32:
-//   { device_id, type, valve, ...extra }
-// Supported `type` values already implemented in the new firmware:
-//   dispense, open_valve, stop, save_preset,
-//   start_calibration, finish_calibration, cancel_calibration,
-//   save_settings
-// -----------------------------------------------------------------
-function sendCommand(deviceId, payload) {
-  socket.emit('command', { device_id: deviceId, ...payload });
-}
+// sendCommand(deviceId, type, extra) is imported directly from ../socket -
+// it already builds { device_id, type, ...extra } and emits 'command'.
 
-export default function VendorHome({ deviceId, vendorName, vendorPhone }) {
+export default function VendorHome({ device: deviceProp, vendor, onBack }) {
+  const deviceId = deviceProp?.device_id || deviceProp?.id;
+  const vendorName = vendor?.name;
+  const vendorPhone = vendor?.phone;
+
   const [device, setDevice] = useState(null);
   const [deviceSettings, setDeviceSettings] = useState(null); // shared: topup_amount, timeout_seconds
   const [valves, setValves] = useState({}); // { [valveNum]: { settings, presets } }
@@ -76,6 +70,9 @@ export default function VendorHome({ deviceId, vendorName, vendorPhone }) {
 
   // ---------------- Socket wiring ----------------
   useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return; // App.jsx connects the socket on login; should already exist here
+
     const onStatus = (msg) => {
       if (msg.device_id !== deviceId) return;
       setStatusByValve((prev) => ({ ...prev, [msg.valve]: msg }));
@@ -121,11 +118,11 @@ export default function VendorHome({ deviceId, vendorName, vendorPhone }) {
 
     if (setupMode) {
       if (calibratingKey === key) {
-        sendCommand(deviceId, { type: 'finish_calibration', valve });
+        sendCommand(deviceId, 'finish_calibration', { valve });
         setCalibratingKey(null);
         showToast(`Button ${slotIndex + 1} saved`);
       } else {
-        sendCommand(deviceId, { type: 'start_calibration', valve, slot_index: slotIndex });
+        sendCommand(deviceId, 'start_calibration', { valve, slot_index: slotIndex });
         setCalibratingKey(key);
         showToast('Filling — watch the bottle, tap again to save');
       }
@@ -134,15 +131,15 @@ export default function VendorHome({ deviceId, vendorName, vendorPhone }) {
 
     const status = statusByValve[valve];
     if (status?.valve_open) {
-      sendCommand(deviceId, { type: 'stop', valve });
+      sendCommand(deviceId, 'stop', { valve });
       return;
     }
-    sendCommand(deviceId, { type: 'dispense', valve, pulses: preset?.pulses || 0 });
+    sendCommand(deviceId, 'dispense', { valve, pulses: preset?.pulses || 0 });
   }
 
   function handleLitersEdit(valve, slotIndex, liters) {
     const pulses = litersToPulses(liters);
-    sendCommand(deviceId, { type: 'save_preset', valve, slot_index: slotIndex, pulses });
+    sendCommand(deviceId, 'save_preset', { valve, slot_index: slotIndex, pulses });
     setValves((prev) => {
       const next = { ...prev };
       const presets = (next[valve]?.presets || []).map((p) =>
@@ -183,7 +180,7 @@ export default function VendorHome({ deviceId, vendorName, vendorPhone }) {
       // NOTE: 'register_master' is not yet in the firmware's command list —
       // add a handler for it (arms registerMasterMode, same as the old
       // Blynk CFG_MASTER flow) before wiring this button live.
-      sendCommand(deviceId, { type: 'register_master', valve: activeValve });
+      sendCommand(deviceId, 'register_master', { valve: activeValve });
       showToast('Waiting for card tap on the machine...');
       setSelectedCfg(null);
       return;
@@ -193,9 +190,9 @@ export default function VendorHome({ deviceId, vendorName, vendorPhone }) {
     if (!val || val <= 0) { showToast('Enter a valid number first'); return; }
 
     if (item.scope === 'shared') {
-      sendCommand(deviceId, { type: 'save_settings', valve: VALVE_NORMAL, settings: { [item.field]: val } });
+      sendCommand(deviceId, 'save_settings', { valve: VALVE_NORMAL, settings: { [item.field]: val } });
     } else {
-      sendCommand(deviceId, { type: 'save_settings', valve: item.valve, settings: { [item.field]: val } });
+      sendCommand(deviceId, 'save_settings', { valve: item.valve, settings: { [item.field]: val } });
     }
     showToast(`${item.label}: ${val} ${item.unit} saved`);
     setSelectedCfg(null);
@@ -260,6 +257,7 @@ export default function VendorHome({ deviceId, vendorName, vendorPhone }) {
     <div style={s.phone}>
       <header style={s.header}>
         <div>
+          {onBack && <div style={s.backLink} onClick={onBack}>← Devices</div>}
           <div style={s.vendorName}>{vendorName || device?.vendor_name || 'Vendor'}</div>
         </div>
         <div style={{ ...s.statusPill, ...(online ? {} : s.statusOffline) }}>
@@ -407,6 +405,7 @@ const styles = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
   },
   vendorName: { fontSize: 18, fontWeight: 600 },
+  backLink: { fontSize: 12, color: '#8FB3AE', marginBottom: 4, cursor: 'pointer' },
   statusPill: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500,
     padding: '5px 10px', borderRadius: 20, background: 'rgba(35,193,163,0.12)', color: '#23C1A3' },
   statusOffline: { background: 'rgba(232,97,95,0.12)', color: '#E8615F' },
