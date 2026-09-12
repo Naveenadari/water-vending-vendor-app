@@ -225,7 +225,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
 
   function renderValvePanel(valve) {
     const presets = valves[valve]?.presets || [];
-    const valveColor = valve === VALVE_COOLING ? '#4FA9E8' : '#23C1A3';
+    const valveColor = valve === VALVE_COOLING ? '#2FC3FF' : '#0AEFC4';
     const valveColorText = valve === VALVE_COOLING ? '#052033' : '#06201B';
     return [0, 1].map((slotIndex) => {
       const preset = presets.find((p) => p.slot_index === slotIndex) || { pulses: 0 };
@@ -249,7 +249,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
       else if (isThisOpen) statusText = 'Dispensing...';
 
       return (
-        <div key={key} style={{ ...s.card, borderColor: valve === VALVE_COOLING ? '#4FA9E8' : s.card.borderColor }}>
+        <div key={key} style={{ ...s.card, borderColor: valve === VALVE_COOLING ? '#2FC3FF' : s.card.borderColor }}>
           <div style={s.cardTop}>
             <span style={s.cardTitle}>Button {slotIndex + 1}</span>
             {!setupMode && (
@@ -278,7 +278,11 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
           <div
             style={{
               ...s.actionBtn,
-              background: isCalibratingThis ? '#F2B84B' : valveColor,
+              background: isCalibratingThis
+                ? 'linear-gradient(135deg, #F7C15C, #E8A424)'
+                : (valve === VALVE_COOLING
+                    ? 'linear-gradient(135deg, #4FD6FF, #1B8FE0)'
+                    : 'linear-gradient(135deg, #3CFFD6, #00C7A0)'),
               color: isCalibratingThis ? '#3A2A00' : valveColorText,
             }}
             onClick={() => handlePresetTap(valve, slotIndex)}
@@ -300,7 +304,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
           <div style={s.vendorName}>{vendorName || device?.vendor_name || 'Vendor'}</div>
         </div>
         <div style={{ ...s.statusPill, ...(online ? {} : s.statusOffline) }}>
-          <span style={{ ...s.dot, background: online ? '#23C1A3' : '#E8615F' }} />
+          <span style={{ ...s.dot, background: online ? '#0AEFC4' : '#E8615F' }} />
           {online ? 'Online' : 'Offline'}
         </div>
       </header>
@@ -356,8 +360,8 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
                 <div key={item.key}
                   style={{ ...s.cfgRow, ...(selectedCfg === item.key ? s.cfgRowSelected : {}) }}
                   onClick={() => openCfg(item)}>
-                  <span style={selectedCfg === item.key ? { color: '#23C1A3' } : {}}>{item.label}</span>
-                  <span style={{ ...s.cfgVal, ...(selectedCfg === item.key ? { color: '#23C1A3' } : {}) }}>
+                  <span style={selectedCfg === item.key ? { color: '#0AEFC4' } : {}}>{item.label}</span>
+                  <span style={{ ...s.cfgVal, ...(selectedCfg === item.key ? { color: '#0AEFC4' } : {}) }}>
                     {item.scope === 'master' ? '' : `${item.value ?? '—'} ${item.unit}`}
                   </span>
                 </div>
@@ -448,7 +452,7 @@ const styles = {
   vendorName: { fontSize: 18, fontWeight: 600 },
   backLink: { fontSize: 12, color: '#8FB3AE', marginBottom: 4, cursor: 'pointer' },
   statusPill: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500,
-    padding: '5px 10px', borderRadius: 20, background: 'rgba(35,193,163,0.12)', color: '#23C1A3' },
+    padding: '5px 10px', borderRadius: 20, background: 'rgba(35,193,163,0.12)', color: '#0AEFC4' },
   statusOffline: { background: 'rgba(232,97,95,0.12)', color: '#E8615F' },
   dot: { width: 7, height: 7, borderRadius: '50%' },
 
@@ -462,8 +466,11 @@ const styles = {
   tab: { flex: 1, padding: '9px 0', textAlign: 'center', borderRadius: 10, fontSize: 13,
     fontWeight: 500, cursor: 'pointer', border: '1px solid #1F3E42', color: '#8FB3AE', background: '#11292E' },
   tabActive: (valve) => ({
-    background: valve === VALVE_COOLING ? '#4FA9E8' : '#23C1A3',
+    background: valve === VALVE_COOLING
+      ? 'linear-gradient(135deg, #4FD6FF, #1B8FE0)'
+      : 'linear-gradient(135deg, #3CFFD6, #00C7A0)',
     color: valve === VALVE_COOLING ? '#052033' : '#06201B', borderColor: 'transparent',
+    boxShadow: valve === VALVE_COOLING ? '0 4px 14px rgba(47,195,255,0.35)' : '0 4px 14px rgba(10,239,196,0.35)',
   }),
 
   panel: { display: 'flex', flexDirection: 'column', gap: 10 },
@@ -488,7 +495,7 @@ const styles = {
   toggleMain: { fontSize: 13, fontWeight: 500 },
   toggleSub: { fontSize: 11, color: '#8FB3AE' },
   toggle: { width: 38, height: 22, borderRadius: 20, background: '#1F3E42', position: 'relative', cursor: 'pointer' },
-  toggleOn: { background: '#23C1A3' },
+  toggleOn: { background: '#0AEFC4' },
   toggleKnob: { width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: 3, transition: 'left 0.15s' },
   toggleKnobOn: { left: 19 },
 
@@ -496,14 +503,14 @@ const styles = {
   cfgList: { borderRadius: 14, overflow: 'hidden', border: '1px solid #1F3E42' },
   cfgRow: { display: 'flex', justifyContent: 'space-between', padding: '10px 12px',
     borderBottom: '1px solid #1F3E42', cursor: 'pointer', background: '#11292E', fontSize: 13 },
-  cfgRowSelected: { background: 'rgba(35,193,163,0.16)', borderLeft: '3px solid #23C1A3',
+  cfgRowSelected: { background: 'rgba(35,193,163,0.16)', borderLeft: '3px solid #0AEFC4',
     paddingLeft: 11, fontWeight: 700 },
   cfgVal: { color: '#8FB3AE', fontSize: 12 },
 
   cfgEditor: { marginTop: 10, background: '#163338', borderRadius: 14, padding: '12px 14px' },
   cfgInput: { flex: 1, background: '#11292E', border: '1px solid #1F3E42', borderRadius: 10,
     padding: '8px 10px', color: '#EAF6F3', fontSize: 13 },
-  saveBtn: { padding: '8px 16px', borderRadius: 10, background: '#23C1A3', color: '#06201B',
+  saveBtn: { padding: '8px 16px', borderRadius: 10, background: '#0AEFC4', color: '#06201B',
     fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
   masterNote: { fontSize: 12, color: '#8FB3AE', lineHeight: 1.4, marginBottom: 8 },
 
@@ -511,7 +518,7 @@ const styles = {
   helpTitle: { fontSize: 14, fontWeight: 600 },
   helpSub: { fontSize: 12, color: '#8FB3AE', marginTop: 4 },
   helpNumber: { fontSize: 17, fontWeight: 600, marginTop: 10 },
-  callBtn: { display: 'block', marginTop: 12, padding: '10px 0', borderRadius: 10, background: '#23C1A3',
+  callBtn: { display: 'block', marginTop: 12, padding: '10px 0', borderRadius: 10, background: '#0AEFC4',
     color: '#06201B', fontWeight: 600, fontSize: 13, textDecoration: 'none', cursor: 'pointer' },
 
   nav: { flexShrink: 0, display: 'flex', gap: 8, padding: '8px 10px', borderTop: '1px solid #1F3E42' },
