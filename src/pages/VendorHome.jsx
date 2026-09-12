@@ -22,6 +22,27 @@ const VALVE_NAME = { [VALVE_NORMAL]: 'Normal water', [VALVE_COOLING]: 'Cooling w
 // sendCommand(deviceId, type, extra) is imported directly from ../socket -
 // it already builds { device_id, type, ...extra } and emits 'command'.
 
+function WaterJar({ id, pct, color }) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const h = 50 * (clamped / 100);
+  const y = 56 - h;
+  return (
+    <svg viewBox="0 0 46 60" width="40" height="52" style={{ flexShrink: 0 }}>
+      <defs>
+        <clipPath id={`jarclip-${id}`}>
+          <rect x="6" y="4" width="34" height="52" rx="7" />
+        </clipPath>
+      </defs>
+      <rect x="14" y="0" width="18" height="6" rx="2" fill="#2C4A4E" />
+      <g clipPath={`url(#jarclip-${id})`}>
+        <rect x="6" y="4" width="34" height="52" fill="#132C30" />
+        <rect x="6" y={y} width="34" height={h} fill={color} style={{ transition: 'y 0.4s linear, height 0.4s linear' }} />
+      </g>
+      <rect x="6" y="4" width="34" height="52" rx="7" fill="none" stroke="#3A5A5E" strokeWidth="2.5" />
+    </svg>
+  );
+}
+
 export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   const deviceId = deviceProp?.device_id || deviceProp?.id;
   const vendorName = vendor?.name;
@@ -120,7 +141,8 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
       if (calibratingKey === key) {
         sendCommand(deviceId, 'finish_calibration', { valve });
         setCalibratingKey(null);
-        showToast(`Button ${slotIndex + 1} saved`);
+        setSetupMode(false); // auto-off: the save itself ends setup mode
+        showToast(`Button ${slotIndex + 1} saved — setup mode is off now`);
       } else {
         sendCommand(deviceId, 'start_calibration', { valve, slot_index: slotIndex });
         setCalibratingKey(key);
@@ -203,6 +225,8 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
 
   function renderValvePanel(valve) {
     const presets = valves[valve]?.presets || [];
+    const valveColor = valve === VALVE_COOLING ? '#4FA9E8' : '#23C1A3';
+    const valveColorText = valve === VALVE_COOLING ? '#052033' : '#06201B';
     return [0, 1].map((slotIndex) => {
       const preset = presets.find((p) => p.slot_index === slotIndex) || { pulses: 0 };
       const liters = pulsesToLiters(preset.pulses);
@@ -214,6 +238,15 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
         ? Math.min(100, Math.round((status.delivered_pulses / status.target_pulses) * 100))
         : 0;
       const liveLiters = pulsesToLiters(status?.delivered_pulses || 0);
+      // while calibrating there's no fixed target, so the jar's visual fill
+      // is just capped at a 3L reference for the graphic - the litre number
+      // itself keeps counting correctly past that
+      const calibPct = Math.min(100, (liveLiters / 3) * 100);
+      const jarPct = isCalibratingThis ? calibPct : (isThisOpen ? pct : 0);
+
+      let statusText = 'Ready';
+      if (isCalibratingThis) statusText = 'Filling — watch the bottle...';
+      else if (isThisOpen) statusText = 'Dispensing...';
 
       return (
         <div key={key} style={{ ...s.card, borderColor: valve === VALVE_COOLING ? '#4FA9E8' : s.card.borderColor }}>
@@ -232,16 +265,22 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
             {setupMode && <span style={s.volUnit}>{liters} L saved</span>}
           </div>
 
-          <div style={s.fillTrack}>
-            <div style={{ ...s.fillBar, width: `${isThisOpen ? pct : 0}%`,
-              background: valve === VALVE_COOLING ? '#4FA9E8' : '#23C1A3' }} />
+          <div style={s.canRow}>
+            <WaterJar id={key} pct={jarPct} color={valveColor} />
+            <div style={s.canStatus}>
+              <div style={s.dcSub}>{statusText}</div>
+              {liveMode && (isThisOpen || isCalibratingThis) && (
+                <div style={s.dcPct}>{liveLiters}L</div>
+              )}
+            </div>
           </div>
-          {liveMode && isThisOpen && (
-            <div style={s.liveText}>{liveLiters}L delivered</div>
-          )}
 
           <div
-            style={{ ...s.actionBtn, ...(isCalibratingThis ? s.actionBtnCalib : {}) }}
+            style={{
+              ...s.actionBtn,
+              background: isCalibratingThis ? '#F2B84B' : valveColor,
+              color: isCalibratingThis ? '#3A2A00' : valveColorText,
+            }}
             onClick={() => handlePresetTap(valve, slotIndex)}
           >
             {setupMode
@@ -317,8 +356,10 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
                 <div key={item.key}
                   style={{ ...s.cfgRow, ...(selectedCfg === item.key ? s.cfgRowSelected : {}) }}
                   onClick={() => openCfg(item)}>
-                  <span>{item.label}</span>
-                  <span style={s.cfgVal}>{item.scope === 'master' ? '' : `${item.value ?? '—'} ${item.unit}`}</span>
+                  <span style={selectedCfg === item.key ? { color: '#23C1A3' } : {}}>{item.label}</span>
+                  <span style={{ ...s.cfgVal, ...(selectedCfg === item.key ? { color: '#23C1A3' } : {}) }}>
+                    {item.scope === 'master' ? '' : `${item.value ?? '—'} ${item.unit}`}
+                  </span>
                 </div>
               ))}
             </div>
@@ -434,13 +475,13 @@ const styles = {
     fontSize: 13, fontWeight: 600, color: 'inherit' },
   volUnit: { fontSize: 11, color: '#8FB3AE' },
 
-  fillTrack: { height: 5, background: '#163338', borderRadius: 4, marginTop: 8, overflow: 'hidden' },
-  fillBar: { height: '100%', borderRadius: 4, transition: 'width 0.4s linear' },
-  liveText: { fontSize: 11, color: '#8FB3AE', marginTop: 4 },
+  canRow: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 },
+  canStatus: { flex: 1 },
+  dcSub: { fontSize: 12, color: '#8FB3AE' },
+  dcPct: { fontSize: 17, fontWeight: 700, marginTop: 2 },
 
-  actionBtn: { marginTop: 8, textAlign: 'center', padding: '8px 0', borderRadius: 10, fontSize: 13,
-    fontWeight: 500, cursor: 'pointer', background: 'rgba(35,193,163,0.12)', color: '#23C1A3' },
-  actionBtnCalib: { background: 'rgba(242,184,75,0.14)', color: '#F2B84B' },
+  actionBtn: { marginTop: 10, textAlign: 'center', padding: '12px 0', borderRadius: 12, fontSize: 14,
+    fontWeight: 700, cursor: 'pointer', boxShadow: '0 3px 10px rgba(0,0,0,0.25)', letterSpacing: 0.2 },
 
   toggleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '10px 2px', borderBottom: '1px solid #1F3E42' },
@@ -455,7 +496,8 @@ const styles = {
   cfgList: { borderRadius: 14, overflow: 'hidden', border: '1px solid #1F3E42' },
   cfgRow: { display: 'flex', justifyContent: 'space-between', padding: '10px 12px',
     borderBottom: '1px solid #1F3E42', cursor: 'pointer', background: '#11292E', fontSize: 13 },
-  cfgRowSelected: { background: '#163338' },
+  cfgRowSelected: { background: 'rgba(35,193,163,0.16)', borderLeft: '3px solid #23C1A3',
+    paddingLeft: 11, fontWeight: 700 },
   cfgVal: { color: '#8FB3AE', fontSize: 12 },
 
   cfgEditor: { marginTop: 10, background: '#163338', borderRadius: 14, padding: '12px 14px' },
