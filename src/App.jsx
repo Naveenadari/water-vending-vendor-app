@@ -1,18 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Login from './pages/Login';
 import Home from './pages/Home';
-import Device from './pages/Device';
-import Control from './pages/Control';
 import Analytics from './pages/Analytics';
+import VendorHome from './pages/VendorHome';
 import { connectSocket, disconnectSocket } from './socket';
-
-function WaterIcon({ color = '#57626f' }) {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-      <path d="M12 2C12 2 5 10.5 5 15a7 7 0 0014 0C19 10.5 12 2 12 2z" stroke={color} strokeWidth="1.8" />
-    </svg>
-  );
-}
 
 export default function App() {
   const [vendor, setVendor] = useState(() => {
@@ -50,17 +41,25 @@ export default function App() {
     return <Login onLoggedIn={setVendor} />;
   }
 
+  // "dashboard" now renders the merged VendorHome screen (replaces the old
+  // separate Device + Control screens). VendorHome has its own bottom nav
+  // (Dispense / Settings / Help / Profile), so we hide the outer app nav
+  // while it's showing to avoid two nav bars stacking on top of each other.
+  if (screen === 'dashboard' && currentDevice) {
+    return (
+      <div className="app-shell">
+        <VendorHome
+          device={currentDevice}
+          vendor={vendor}
+          onBack={() => setScreen('home')}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       {screen === 'home' && <Home vendor={vendor} onSelectDevice={selectDevice} />}
-
-      {screen === 'dashboard' && currentDevice && (
-        <Device device={currentDevice} onBack={() => setScreen('home')} toast={toast} />
-      )}
-
-      {screen === 'control' && currentDevice && (
-        <Control device={currentDevice} onBack={() => setScreen('dashboard')} toast={toast} />
-      )}
 
       {screen === 'analytics' && currentDevice && (
         <Analytics device={currentDevice} onBack={() => setScreen('dashboard')} />
@@ -103,17 +102,10 @@ export default function App() {
           className={`nav-item ${screen === 'dashboard' ? 'active' : ''}`}
           onClick={() => currentDevice && setScreen('dashboard')}
         >
-          <WaterIcon color={screen === 'dashboard' ? '#2fb6c4' : '#57626f'} />
-          Live
-        </button>
-        <button
-          className={`nav-item ${screen === 'control' ? 'active' : ''}`}
-          onClick={() => currentDevice && setScreen('control')}
-        >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M4 6h16M4 12h16M4 18h16" stroke={screen === 'control' ? '#2fb6c4' : '#57626f'} strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M12 2C12 2 5 10.5 5 15a7 7 0 0014 0C19 10.5 12 2 12 2z" stroke={screen === 'dashboard' ? '#2fb6c4' : '#57626f'} strokeWidth="1.8" />
           </svg>
-          Control
+          My Machine
         </button>
         <button className={`nav-item ${screen === 'profile' ? 'active' : ''}`} onClick={() => setScreen('profile')}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
