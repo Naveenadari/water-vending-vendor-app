@@ -15,6 +15,9 @@ export const api = {
   login: (phone, pin) =>
     request('/api/vendors/login', { method: 'POST', body: JSON.stringify({ phone, pin }) }),
 
+  signup: (payload) =>
+    request('/api/vendors/signup', { method: 'POST', body: JSON.stringify(payload) }),
+
   listDevices: (vendorId) => request(`/api/devices/vendor/${vendorId}`),
 
   getDevice: (deviceId) => request(`/api/devices/${deviceId}`),
