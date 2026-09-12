@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
 import Home from './pages/Home';
 import Analytics from './pages/Analytics';
 import VendorHome from './pages/VendorHome';
@@ -10,6 +11,7 @@ export default function App() {
     const saved = localStorage.getItem('vendor');
     return saved ? JSON.parse(saved) : null;
   });
+  const [authScreen, setAuthScreen] = useState('login'); // login | signup
   const [screen, setScreen] = useState('home');
   const [currentDevice, setCurrentDevice] = useState(null);
   const [toastMsg, setToastMsg] = useState('');
@@ -38,7 +40,9 @@ export default function App() {
   }
 
   if (!vendor) {
-    return <Login onLoggedIn={setVendor} />;
+    return authScreen === 'signup'
+      ? <Signup onSignedUp={setVendor} onGoLogin={() => setAuthScreen('login')} />
+      : <Login onLoggedIn={setVendor} onGoSignup={() => setAuthScreen('signup')} />;
   }
 
   // "dashboard" now renders the merged VendorHome screen (replaces the old
