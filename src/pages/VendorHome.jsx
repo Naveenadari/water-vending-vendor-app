@@ -9,11 +9,15 @@ import { api } from '../api';
 import { getSocket, sendCommand } from '../socket';
 
 // -----------------------------------------------------------------
-// Constants (must match firmware: #define PULSES_PER_LITER 240.0)
+// Constants
 // -----------------------------------------------------------------
-const PULSES_PER_LITER = 240;
-const pulsesToLiters = (p) => Math.round((p / PULSES_PER_LITER) * 100) / 100;
-const litersToPulses = (l) => Math.round(l * PULSES_PER_LITER);
+// pulses-per-liter is NOT a fixed constant - different physical flow
+// sensors (1/2", 3/4", 1") deliver different pulses/liter. Each device
+// has its own calibrated value (device_settings.pulses_per_liter),
+// fetched below and passed into these converters. 240 here is only a
+// fallback used for one render before the real value loads.
+const pulsesToLiters = (p, ppl = 240) => Math.round((p / ppl) * 100) / 100;
+const litersToPulses = (l, ppl = 240) => Math.round(l * ppl);
 
 const VALVE_NORMAL = 0;
 const VALVE_COOLING = 1;
@@ -70,6 +74,9 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   const [qrLoading, setQrLoading] = useState(false);
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [priceEdits, setPriceEdits] = useState({}); // { [valve]: { price, litres } }
+  const [pulsesPerLiter, setPulsesPerLiter] = useState(240);
+  const [calibTargetLiters, setCalibTargetLiters] = useState(20);
+  const [flowCalibrating, setFlowCalibrating] = useState(false);
 
   const toastTimer = useRef(null);
   const showToast = (msg) => {
@@ -87,13 +94,15 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
       setDeviceSettings(data.device_settings);
       setOnline(!!data.device?.is_online);
       setPaymentMode(data.device?.payment_mode || 'macrodroid');
+      const ppl = data.device_settings?.pulses_per_liter || 240;
+      setPulsesPerLiter(ppl);
       const byValve = {};
       const priceInit = {};
       (data.valves || []).forEach((v) => {
         byValve[v.valve] = { settings: v.settings, presets: v.presets };
         priceInit[v.valve] = {
           price: v.settings?.qr_price_rupees ?? '',
-          litres: v.settings?.qr_pulses ? pulsesToLiters(v.settings.qr_pulses) : '',
+          litres: v.settings?.qr_pulses ? pulsesToLiters(v.settings.qr_pulses, ppl) : '',
         };
       });
       setValves(byValve);
@@ -124,6 +133,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
       // firmware just confirmed a save — refetch to pick up the new numbers
       api.getDevice(deviceId).then((data) => {
         setDeviceSettings(data.device_settings);
+        setPulsesPerLiter(data.device_settings?.pulses_per_liter || 240);
         const byValve = {};
         (data.valves || []).forEach((v) => { byValve[v.valve] = { settings: v.settings, presets: v.presets }; });
         setValves(byValve);
@@ -173,7 +183,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   }
 
   function handleLitersEdit(valve, slotIndex, liters) {
-    const pulses = litersToPulses(liters);
+    const pulses = litersToPulses(liters, pulsesPerLiter);
     sendCommand(deviceId, 'save_preset', { valve, slot_index: slotIndex, pulses });
     setValves((prev) => {
       const next = { ...prev };
@@ -273,6 +283,20 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
     }
   }
 
+  function handleFlowCalibrate() {
+    const target = Number(calibTargetLiters);
+    if (flowCalibrating) {
+      sendCommand(deviceId, 'finish_calibration', { valve: activeValve });
+      setFlowCalibrating(false);
+      showToast('Calibration saved - flow sensor is now accurate');
+    } else {
+      if (!target || target <= 0) { showToast('Enter a valid target first'); return; }
+      sendCommand(deviceId, 'start_flow_calibration', { valve: activeValve, target_liters: target });
+      setFlowCalibrating(true);
+      showToast(`Fill exactly ${target}L, then tap again`);
+    }
+  }
+
   async function handleInstallClick() {
     const promptEvent = window.__pwaInstallPrompt;
     if (promptEvent) {
@@ -296,7 +320,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
     const valveColorText = valve === VALVE_COOLING ? '#052033' : '#06201B';
     return [0, 1].map((slotIndex) => {
       const preset = presets.find((p) => p.slot_index === slotIndex) || { pulses: 0 };
-      const liters = pulsesToLiters(preset.pulses);
+      const liters = pulsesToLiters(preset.pulses, pulsesPerLiter);
       const key = `${valve}-${slotIndex}`;
       const status = statusByValve[valve];
       const isThisOpen = status?.valve_open;
@@ -304,7 +328,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
       const pct = status?.target_pulses
         ? Math.min(100, Math.round((status.delivered_pulses / status.target_pulses) * 100))
         : 0;
-      const liveLiters = pulsesToLiters(status?.delivered_pulses || 0);
+      const liveLiters = pulsesToLiters(status?.delivered_pulses || 0, pulsesPerLiter);
       // while calibrating there's no fixed target, so the jar's visual fill
       // is just capped at a 3L reference for the graphic - the litre number
       // itself keeps counting correctly past that
@@ -418,6 +442,43 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
               <div style={{ ...s.toggle, ...(liveMode ? s.toggleOn : {}) }}
                 onClick={() => setLiveMode((v) => !v)}>
                 <div style={{ ...s.toggleKnob, ...(liveMode ? s.toggleKnobOn : {}) }} />
+              </div>
+            </div>
+
+            <div style={s.settingsLabel}>Calibrate flow sensor</div>
+            <div style={s.card}>
+              <div style={s.cardTitle}>Which tap?</div>
+              <div style={{ ...s.tabs, marginTop: 8 }}>
+                {[VALVE_NORMAL, VALVE_COOLING].map((v) => (
+                  <div key={v}
+                    style={{ ...s.tab, ...(activeValve === v ? s.tabActive(v) : {}) }}
+                    onClick={() => setActiveValve(v)}>
+                    {VALVE_NAME[v]}
+                  </div>
+                ))}
+              </div>
+              <div style={{ ...s.cardTitle, marginTop: 14 }}>Fill exactly this much, then tap Start</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                {[1, 2, 5, 20].map((l) => (
+                  <div key={l}
+                    style={{ ...s.saveBtn, flex: 1,
+                      background: Number(calibTargetLiters) === l ? '#0AEFC4' : '#1F3E42',
+                      color: Number(calibTargetLiters) === l ? '#06201B' : '#EAF6F3' }}
+                    onClick={() => setCalibTargetLiters(l)}>
+                    {l}L
+                  </div>
+                ))}
+              </div>
+              <input type="number" style={{ ...s.cfgInput, marginTop: 8, width: '100%', boxSizing: 'border-box' }}
+                value={calibTargetLiters} onChange={(e) => setCalibTargetLiters(e.target.value)}
+                placeholder="Or enter a custom litres" />
+              <div style={{ ...s.actionBtn, marginTop: 10,
+                background: flowCalibrating ? '#F2B84B' : '#0AEFC4', color: '#06201B' }}
+                onClick={handleFlowCalibrate}>
+                {flowCalibrating ? `Tap when exactly ${calibTargetLiters}L is reached` : 'Start calibration'}
+              </div>
+              <div style={{ fontSize: 11, color: '#8FB3AE', marginTop: 8 }}>
+                Current: {pulsesPerLiter.toFixed ? pulsesPerLiter.toFixed(1) : pulsesPerLiter} pulses/liter
               </div>
             </div>
 
