@@ -21,6 +21,15 @@ export default function App() {
     return () => disconnectSocket();
   }, [vendor]);
 
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      window.__pwaInstallPrompt = e;
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
   const toast = useCallback((msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(''), 2500);
