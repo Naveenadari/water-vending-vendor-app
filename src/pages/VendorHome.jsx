@@ -68,6 +68,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   const [paymentMode, setPaymentMode] = useState('macrodroid');
   const [qrImageUrl, setQrImageUrl] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
   const [priceEdits, setPriceEdits] = useState({}); // { [valve]: { price, litres } }
 
   const toastTimer = useRef(null);
@@ -272,6 +273,20 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
     }
   }
 
+  async function handleInstallClick() {
+    const promptEvent = window.__pwaInstallPrompt;
+    if (promptEvent) {
+      promptEvent.prompt();
+      await promptEvent.userChoice;
+      window.__pwaInstallPrompt = null;
+      return;
+    }
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    showToast(isIOS
+      ? 'Tap the Share icon, then "Add to Home Screen"'
+      : 'Open browser menu (⋮) and tap "Install app" or "Add to Home Screen"');
+  }
+
   // ---------------- Render helpers ----------------
   const s = styles;
 
@@ -426,14 +441,15 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
               <>
                 <div style={s.qrCard}>
                   {qrImageUrl ? (
-                    <img src={qrImageUrl} alt="Payment QR" style={s.qrImage} />
+                    <img src={qrImageUrl} alt="Payment QR" style={s.qrImage}
+                      onClick={() => setQrModalOpen(true)} />
                   ) : (
                     <div style={s.saveBtn} onClick={loadQr}>
                       {qrLoading ? 'Loading...' : 'Show my QR code'}
                     </div>
                   )}
                   {qrImageUrl && (
-                    <div style={{ fontSize: 12, color: '#555', marginTop: 8 }}>Print or screenshot this and stick it on the machine</div>
+                    <div style={{ fontSize: 12, color: '#555', marginTop: 8 }}>Tap the QR to view full size, print, or download</div>
                   )}
                 </div>
 
@@ -510,7 +526,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
             <div style={{ ...s.helpCard, marginTop: 12 }}>
               <div style={s.helpTitle}>Download the app</div>
               <div style={s.helpSub}>Add Sol Electronics to your home screen for direct, already-logged-in access.</div>
-              <div style={s.callBtn} onClick={() => showToast('Follow your browser\'s "Add to Home Screen" prompt')}>
+              <div style={s.callBtn} onClick={handleInstallClick}>
                 Download app
               </div>
             </div>
@@ -528,6 +544,25 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
       </nav>
 
       {toast && <div style={s.toast}>{toast}</div>}
+
+      {qrModalOpen && (
+        <div style={s.qrModalOverlay} onClick={() => setQrModalOpen(false)}>
+          <div style={s.qrModalCard} onClick={(e) => e.stopPropagation()}>
+            <img src={qrImageUrl} alt="Payment QR" style={s.qrModalImage} />
+            <div style={s.qrModalHint}>Long-press the QR to save it, or use the buttons below</div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <a href={qrImageUrl} download="sol-electronics-payment-qr.png" target="_blank" rel="noreferrer"
+                style={{ ...s.saveBtn, flex: 1, textDecoration: 'none', display: 'block', textAlign: 'center' }}>
+                Download
+              </a>
+              <div style={{ ...s.saveBtn, flex: 1, background: '#EAF6F3', color: '#06201B' }}
+                onClick={() => setQrModalOpen(false)}>
+                Close
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -616,7 +651,12 @@ const styles = {
 
   helpCard: { background: '#11292E', border: '1px solid #1F3E42', borderRadius: 14, padding: 16, textAlign: 'center' },
   qrCard: { background: '#fff', borderRadius: 14, padding: 16, textAlign: 'center', marginTop: 4, marginBottom: 12 },
-  qrImage: { width: 180, height: 180 },
+  qrImage: { width: 180, height: 180, cursor: 'pointer' },
+  qrModalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 200,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  qrModalCard: { background: '#fff', borderRadius: 18, padding: 22, textAlign: 'center', width: '100%', maxWidth: 340 },
+  qrModalImage: { width: '100%', maxWidth: 280, height: 'auto' },
+  qrModalHint: { fontSize: 12, color: '#666', marginTop: 12 },
   helpTitle: { fontSize: 14, fontWeight: 600 },
   helpSub: { fontSize: 12, color: '#8FB3AE', marginTop: 4 },
   helpNumber: { fontSize: 17, fontWeight: 600, marginTop: 10 },
