@@ -45,6 +45,7 @@ function WaterJar({ id, pct, color }) {
 
 export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   const deviceId = deviceProp?.device_id || deviceProp?.id;
+  const vendorId = vendor?.id;
   const vendorName = vendor?.name;
   const vendorPhone = vendor?.phone;
 
@@ -64,6 +65,10 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   const [selectedCfg, setSelectedCfg] = useState(null);
   const [cfgValue, setCfgValue] = useState('');
   const [toast, setToast] = useState('');
+  const [paymentMode, setPaymentMode] = useState('macrodroid');
+  const [qrImageUrl, setQrImageUrl] = useState(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [priceEdits, setPriceEdits] = useState({}); // { [valve]: { price, litres } }
 
   const toastTimer = useRef(null);
   const showToast = (msg) => {
@@ -80,11 +85,18 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
       setDevice(data.device);
       setDeviceSettings(data.device_settings);
       setOnline(!!data.device?.is_online);
+      setPaymentMode(data.device?.payment_mode || 'macrodroid');
       const byValve = {};
+      const priceInit = {};
       (data.valves || []).forEach((v) => {
         byValve[v.valve] = { settings: v.settings, presets: v.presets };
+        priceInit[v.valve] = {
+          price: v.settings?.qr_price_rupees ?? '',
+          litres: v.settings?.qr_pulses ? pulsesToLiters(v.settings.qr_pulses) : '',
+        };
       });
       setValves(byValve);
+      setPriceEdits(priceInit);
     });
     return () => { cancelled = true; };
   }, [deviceId]);
@@ -220,6 +232,46 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
     setSelectedCfg(null);
   }
 
+  // ---------------- Razorpay: payment mode, QR, pricing ----------------
+  async function togglePaymentMode() {
+    const next = paymentMode === 'razorpay' ? 'macrodroid' : 'razorpay';
+    try {
+      await api.setPaymentMode({ device_id: deviceId, vendor_id: vendorId, payment_mode: next });
+      setPaymentMode(next);
+      if (next === 'razorpay') loadQr();
+    } catch (e) {
+      showToast(e.message || 'Could not switch payment mode');
+    }
+  }
+
+  async function loadQr() {
+    setQrLoading(true);
+    try {
+      const result = await api.getRazorpayQr(deviceId, vendorId);
+      setQrImageUrl(result.image_url);
+    } catch (e) {
+      showToast(e.message || 'Could not load QR code');
+    } finally {
+      setQrLoading(false);
+    }
+  }
+
+  async function savePrice(valve) {
+    const edit = priceEdits[valve] || {};
+    const price = Number(edit.price);
+    const litres = Number(edit.litres);
+    if (!price || price <= 0 || !litres || litres <= 0) {
+      showToast('Enter both a price and litres first');
+      return;
+    }
+    try {
+      await api.setRazorpayPrice({ device_id: deviceId, vendor_id: vendorId, valve, price_rupees: price, litres });
+      showToast(`${VALVE_NAME[valve]}: ₹${price} for ${litres}L saved`);
+    } catch (e) {
+      showToast(e.message || 'Could not save price');
+    }
+  }
+
   // ---------------- Render helpers ----------------
   const s = styles;
 
@@ -353,6 +405,54 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
                 <div style={{ ...s.toggleKnob, ...(liveMode ? s.toggleKnobOn : {}) }} />
               </div>
             </div>
+
+            <div style={s.settingsLabel}>Payment collection</div>
+            <div style={s.toggleRow}>
+              <div>
+                <div style={s.toggleMain}>{paymentMode === 'razorpay' ? 'Razorpay (auto-dispense)' : 'MacroDroid (notification-based)'}</div>
+                <div style={s.toggleSub}>
+                  {paymentMode === 'razorpay'
+                    ? 'Customer scans your QR and pays - water dispenses automatically'
+                    : 'Your phone reads UPI payment notifications, as before'}
+                </div>
+              </div>
+              <div style={{ ...s.toggle, ...(paymentMode === 'razorpay' ? s.toggleOn : {}) }}
+                onClick={togglePaymentMode}>
+                <div style={{ ...s.toggleKnob, ...(paymentMode === 'razorpay' ? s.toggleKnobOn : {}) }} />
+              </div>
+            </div>
+
+            {paymentMode === 'razorpay' && (
+              <>
+                <div style={s.qrCard}>
+                  {qrImageUrl ? (
+                    <img src={qrImageUrl} alt="Payment QR" style={s.qrImage} />
+                  ) : (
+                    <div style={s.saveBtn} onClick={loadQr}>
+                      {qrLoading ? 'Loading...' : 'Show my QR code'}
+                    </div>
+                  )}
+                  {qrImageUrl && (
+                    <div style={{ fontSize: 12, color: '#555', marginTop: 8 }}>Print or screenshot this and stick it on the machine</div>
+                  )}
+                </div>
+
+                {[VALVE_NORMAL, VALVE_COOLING].map((v) => (
+                  <div key={v} style={s.card}>
+                    <div style={s.cardTitle}>{VALVE_NAME[v]} - pay &amp; dispense price</div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <input type="number" placeholder="₹ price" style={s.cfgInput}
+                        value={priceEdits[v]?.price ?? ''}
+                        onChange={(e) => setPriceEdits((p) => ({ ...p, [v]: { ...p[v], price: e.target.value } }))} />
+                      <input type="number" placeholder="Litres" style={s.cfgInput}
+                        value={priceEdits[v]?.litres ?? ''}
+                        onChange={(e) => setPriceEdits((p) => ({ ...p, [v]: { ...p[v], litres: e.target.value } }))} />
+                      <div style={s.saveBtn} onClick={() => savePrice(v)}>Save</div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
 
             <div style={s.settingsLabel}>Configure a value</div>
             <div style={s.cfgList}>
@@ -515,6 +615,8 @@ const styles = {
   masterNote: { fontSize: 12, color: '#8FB3AE', lineHeight: 1.4, marginBottom: 8 },
 
   helpCard: { background: '#11292E', border: '1px solid #1F3E42', borderRadius: 14, padding: 16, textAlign: 'center' },
+  qrCard: { background: '#fff', borderRadius: 14, padding: 16, textAlign: 'center', marginTop: 4, marginBottom: 12 },
+  qrImage: { width: 180, height: 180 },
   helpTitle: { fontSize: 14, fontWeight: 600 },
   helpSub: { fontSize: 12, color: '#8FB3AE', marginTop: 4 },
   helpNumber: { fontSize: 17, fontWeight: 600, marginTop: 10 },
