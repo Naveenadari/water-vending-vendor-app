@@ -29,7 +29,13 @@ export default function Signup({ onSignedUp, onGoLogin }) {
   async function startScan() {
     setError('');
     if (!window.jsQR) {
-      setError('QR scanner not loaded - enter the code manually below instead.');
+      // jsQR loads from a CDN <script> tag; on a slow connection it might
+      // not be ready the instant this screen mounts. Wait a bit before
+      // giving up, instead of failing immediately.
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    if (!window.jsQR) {
+      setError('QR scanner is still loading - wait a few seconds and tap "Scan" again, or enter the code manually below.');
       return;
     }
     try {
