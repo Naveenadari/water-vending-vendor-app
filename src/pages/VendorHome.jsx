@@ -99,11 +99,16 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
       const byValve = {};
       const priceInit = {};
       (data.valves || []).forEach((v) => {
-        byValve[v.valve] = { settings: v.settings, presets: v.presets };
-        priceInit[v.valve] = {
-          price: v.settings?.qr_price_rupees ?? '',
-          litres: v.settings?.qr_pulses ? pulsesToLiters(v.settings.qr_pulses, ppl) : '',
-        };
+        byValve[v.valve] = { settings: v.settings, presets: v.presets, qr_prices: v.qr_prices };
+        const slotIndices = (v.presets || []).map((p) => p.slot_index).sort((a, b) => a - b);
+        priceInit[v.valve] = {};
+        slotIndices.forEach((slot) => {
+          const existing = (v.qr_prices || []).find((q) => q.slot_index === slot);
+          priceInit[v.valve][slot] = {
+            price: existing?.price_rupees ?? '',
+            litres: existing?.pulses ? pulsesToLiters(existing.pulses, ppl) : '',
+          };
+        });
       });
       setValves(byValve);
       setPriceEdits(priceInit);
@@ -196,18 +201,23 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   }
 
   // ---------------- Settings list ----------------
+  const isUpiOnly = device?.payment_hardware === 'upi_only';
+  const availableValves = Object.keys(valves).length > 0
+    ? Object.keys(valves).map(Number).sort((a, b) => a - b)
+    : [VALVE_NORMAL]; // fallback before data loads
+  const singleTap = availableValves.length === 1;
   const cfgItems = [
-    { key: 'recharge', label: 'Card recharge', unit: 'Rs', field: 'topup_amount', scope: 'shared',
-      value: deviceSettings?.topup_amount, hint: 'Amount added per card top-up' },
-    { key: 'master', label: 'Master card', scope: 'master', hint: 'Register the recharge card' },
-    { key: 'coinNormal', label: 'Normal coin rate', unit: 'pulses/Rs', field: 'pulses_per_rupee', scope: 'valve', valve: VALVE_NORMAL,
-      value: valves[VALVE_NORMAL]?.settings?.pulses_per_rupee },
-    { key: 'coinCooling', label: 'Cool coin rate', unit: 'pulses/Rs', field: 'pulses_per_rupee', scope: 'valve', valve: VALVE_COOLING,
-      value: valves[VALVE_COOLING]?.settings?.pulses_per_rupee },
-    { key: 'cardNormal', label: 'Normal card rate', unit: 'Rs/tap', field: 'trip_cost', scope: 'valve', valve: VALVE_NORMAL,
-      value: valves[VALVE_NORMAL]?.settings?.trip_cost },
-    { key: 'cardCooling', label: 'Cool card rate', unit: 'Rs/tap', field: 'trip_cost', scope: 'valve', valve: VALVE_COOLING,
-      value: valves[VALVE_COOLING]?.settings?.trip_cost },
+    ...(isUpiOnly ? [] : [
+      { key: 'recharge', label: 'Card recharge', unit: 'Rs', field: 'topup_amount', scope: 'shared',
+        value: deviceSettings?.topup_amount, hint: 'Amount added per card top-up' },
+      { key: 'master', label: 'Master card', scope: 'master', hint: 'Register the recharge card' },
+      ...availableValves.flatMap((v) => [
+        { key: `coin${v}`, label: `${VALVE_NAME[v]} coin rate`, unit: 'pulses/Rs', field: 'pulses_per_rupee', scope: 'valve', valve: v,
+          value: valves[v]?.settings?.pulses_per_rupee },
+        { key: `card${v}`, label: `${VALVE_NAME[v]} card rate`, unit: 'Rs/tap', field: 'trip_cost', scope: 'valve', valve: v,
+          value: valves[v]?.settings?.trip_cost },
+      ]),
+    ]),
     { key: 'timeout', label: 'Timeout', unit: 'sec', field: 'timeout_seconds', scope: 'shared',
       value: deviceSettings?.timeout_seconds, hint: 'Seconds to pay after choosing a tap' },
   ];
@@ -267,8 +277,8 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
     }
   }
 
-  async function savePrice(valve) {
-    const edit = priceEdits[valve] || {};
+  async function savePrice(valve, slotIndex) {
+    const edit = priceEdits[valve]?.[slotIndex] || {};
     const price = Number(edit.price);
     const litres = Number(edit.litres);
     if (!price || price <= 0 || !litres || litres <= 0) {
@@ -276,8 +286,8 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
       return;
     }
     try {
-      await api.setRazorpayPrice({ device_id: deviceId, vendor_id: vendorId, valve, price_rupees: price, litres });
-      showToast(`${VALVE_NAME[valve]}: ₹${price} for ${litres}L saved`);
+      await api.setRazorpayPrice({ device_id: deviceId, vendor_id: vendorId, valve, slot_index: slotIndex, price_rupees: price, litres });
+      showToast(`${VALVE_NAME[valve]} button ${slotIndex + 1}: ₹${price} for ${litres}L saved`);
     } catch (e) {
       showToast(e.message || 'Could not save price');
     }
@@ -316,9 +326,12 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
 
   function renderValvePanel(valve) {
     const presets = valves[valve]?.presets || [];
+    const slotIndices = presets.length > 0
+      ? presets.map((p) => p.slot_index).sort((a, b) => a - b)
+      : [0, 1]; // fallback before data loads
     const valveColor = valve === VALVE_COOLING ? '#2FC3FF' : '#0AEFC4';
     const valveColorText = valve === VALVE_COOLING ? '#052033' : '#06201B';
-    return [0, 1].map((slotIndex) => {
+    return slotIndices.map((slotIndex) => {
       const preset = presets.find((p) => p.slot_index === slotIndex) || { pulses: 0 };
       const liters = pulsesToLiters(preset.pulses, pulsesPerLiter);
       const key = `${valve}-${slotIndex}`;
@@ -409,15 +422,17 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
                 tap the same button again when the bottle has the amount you want.
               </div>
             )}
-            <div style={s.tabs}>
-              {[VALVE_NORMAL, VALVE_COOLING].map((v) => (
-                <div key={v}
-                  style={{ ...s.tab, ...(activeValve === v ? s.tabActive(v) : {}) }}
-                  onClick={() => setActiveValve(v)}>
-                  {VALVE_NAME[v]}
-                </div>
-              ))}
-            </div>
+            {!singleTap && (
+              <div style={s.tabs}>
+                {availableValves.map((v) => (
+                  <div key={v}
+                    style={{ ...s.tab, ...(activeValve === v ? s.tabActive(v) : {}) }}
+                    onClick={() => setActiveValve(v)}>
+                    {VALVE_NAME[v]}
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={s.panel}>{renderValvePanel(activeValve)}</div>
           </div>
         )}
@@ -448,15 +463,20 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
             <div style={s.settingsLabel}>Calibrate flow sensor</div>
             <div style={s.card}>
               <div style={s.cardTitle}>Which tap?</div>
-              <div style={{ ...s.tabs, marginTop: 8 }}>
-                {[VALVE_NORMAL, VALVE_COOLING].map((v) => (
-                  <div key={v}
-                    style={{ ...s.tab, ...(activeValve === v ? s.tabActive(v) : {}) }}
-                    onClick={() => setActiveValve(v)}>
-                    {VALVE_NAME[v]}
-                  </div>
-                ))}
-              </div>
+              {!singleTap && (
+                <div style={{ ...s.tabs, marginTop: 8 }}>
+                  {availableValves.map((v) => (
+                    <div key={v}
+                      style={{ ...s.tab, ...(activeValve === v ? s.tabActive(v) : {}) }}
+                      onClick={() => setActiveValve(v)}>
+                      {VALVE_NAME[v]}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {singleTap && (
+                <div style={{ fontSize: 13, color: '#8FB3AE', marginTop: 6 }}>{VALVE_NAME[availableValves[0]]}</div>
+              )}
               <div style={{ ...s.cardTitle, marginTop: 14 }}>Fill exactly this much, then tap Start</div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 {[1, 2, 5, 20].map((l) => (
@@ -514,20 +534,30 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
                   )}
                 </div>
 
-                {[VALVE_NORMAL, VALVE_COOLING].map((v) => (
-                  <div key={v} style={s.card}>
-                    <div style={s.cardTitle}>{VALVE_NAME[v]} - pay &amp; dispense price</div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <input type="number" placeholder="₹ price" style={s.cfgInput}
-                        value={priceEdits[v]?.price ?? ''}
-                        onChange={(e) => setPriceEdits((p) => ({ ...p, [v]: { ...p[v], price: e.target.value } }))} />
-                      <input type="number" placeholder="Litres" style={s.cfgInput}
-                        value={priceEdits[v]?.litres ?? ''}
-                        onChange={(e) => setPriceEdits((p) => ({ ...p, [v]: { ...p[v], litres: e.target.value } }))} />
-                      <div style={s.saveBtn} onClick={() => savePrice(v)}>Save</div>
+                {availableValves.map((v) => {
+                  const slotIndices = (valves[v]?.presets || []).map((p) => p.slot_index).sort((a, b) => a - b);
+                  return (
+                    <div key={v} style={s.card}>
+                      <div style={s.cardTitle}>{VALVE_NAME[v]} - pay &amp; dispense prices</div>
+                      {slotIndices.map((slot) => (
+                        <div key={slot} style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                          <span style={{ fontSize: 12, color: '#8FB3AE', width: 20 }}>{slot + 1}.</span>
+                          <input type="number" placeholder="₹ price" style={s.cfgInput}
+                            value={priceEdits[v]?.[slot]?.price ?? ''}
+                            onChange={(e) => setPriceEdits((p) => ({
+                              ...p, [v]: { ...p[v], [slot]: { ...p[v]?.[slot], price: e.target.value } },
+                            }))} />
+                          <input type="number" placeholder="Litres" style={s.cfgInput}
+                            value={priceEdits[v]?.[slot]?.litres ?? ''}
+                            onChange={(e) => setPriceEdits((p) => ({
+                              ...p, [v]: { ...p[v], [slot]: { ...p[v]?.[slot], litres: e.target.value } },
+                            }))} />
+                          <div style={s.saveBtn} onClick={() => savePrice(v, slot)}>Save</div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </>
             )}
 
