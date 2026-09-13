@@ -21,4 +21,13 @@ export const api = {
   listDevices: (vendorId) => request(`/api/devices/vendor/${vendorId}`),
 
   getDevice: (deviceId) => request(`/api/devices/${deviceId}`),
+
+  getRazorpayQr: (device_id, vendor_id) =>
+    request('/api/razorpay/qr', { method: 'POST', body: JSON.stringify({ device_id, vendor_id }) }),
+
+  setRazorpayPrice: (payload) =>
+    request('/api/razorpay/price', { method: 'POST', body: JSON.stringify(payload) }),
+
+  setPaymentMode: (payload) =>
+    request('/api/razorpay/payment-mode', { method: 'POST', body: JSON.stringify(payload) }),
 };
