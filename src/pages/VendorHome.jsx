@@ -57,10 +57,10 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
   const [device, setDevice] = useState(null);
   const [deviceSettings, setDeviceSettings] = useState(null); // shared: topup_amount, timeout_seconds
   const [valves, setValves] = useState({}); // { [valveNum]: { settings, presets } }
-  const [online, setOnline] = useState(false);
+  const [online, setOnline] = useState(null); // null = connecting (unknown yet), true/false = confirmed
   const [statusByValve, setStatusByValve] = useState({}); // live device_status per valve
 
-  const [activeMain, setActiveMain] = useState('home'); // home | dispense | settings | help | profile
+  const [activeMain, setActiveMain] = useState('dispense'); // dispense | settings | profile | help
   const [activeValve, setActiveValve] = useState(VALVE_NORMAL);
 
   const [setupMode, setSetupMode] = useState(false);
@@ -425,57 +425,13 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
             <div style={s.vendorSub}>Sol Electronics</div>
           </div>
         </div>
-        <div style={{ ...s.statusPill, ...(online ? {} : s.statusOffline) }}>
-          <span style={{ ...s.dot, background: online ? '#3CFFD6' : '#E8615F' }} />
-          {online ? 'System Online' : 'Offline'}
+        <div style={{ ...s.statusPill, ...(online === false ? s.statusOffline : {}) }}>
+          <span style={{ ...s.dot, background: online === true ? '#3CFFD6' : online === false ? '#E8615F' : '#6B8CAE' }} />
+          {online === true ? 'System Online' : online === false ? 'Offline' : 'Connecting…'}
         </div>
       </header>
 
       <div style={s.content}>
-        {activeMain === 'home' && (
-          <div style={s.scrollArea}>
-            <div style={s.homeGrid}>
-              {[
-                { key: 'dispense', label: 'Dispense', icon: '💧', color: '#3CFFD6' },
-                { key: 'settings', label: 'Settings', icon: '⚙️', color: '#4FD6FF' },
-                { key: 'help', label: 'Help', icon: '☎️', color: '#F7C15C' },
-                { key: 'profile', label: 'Profile', icon: '👤', color: '#B18CFF' },
-              ].map((card) => (
-                <div key={card.key} style={s.homeCard} onClick={() => setActiveMain(card.key)}>
-                  <div style={{ ...s.homeIconBadge, boxShadow: `0 0 16px ${card.color}55`, borderColor: `${card.color}66` }}>
-                    <span style={{ fontSize: 22 }}>{card.icon}</span>
-                  </div>
-                  <div style={s.homeCardLabel}>{card.label}</div>
-                  <span style={s.homeCardChevron}>›</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={s.statsBar}>
-              <div style={s.statItem}>
-                <div style={s.statLabel}>Connected</div>
-                <div style={s.statValue}>{online ? 'WiFi / Internet' : 'Offline'}</div>
-              </div>
-              <div style={s.statItem}>
-                <div style={s.statLabel}>Machine</div>
-                <div style={s.statValue}>{device?.name || '—'}</div>
-              </div>
-              <div style={s.statItem}>
-                <div style={s.statLabel}>Payment</div>
-                <div style={s.statValue}>{paymentMode === 'razorpay' ? 'Razorpay' : 'MacroDroid'}</div>
-              </div>
-              <div style={s.statItem}>
-                <div style={s.statLabel}>Taps</div>
-                <div style={s.statValue}>{singleTap ? '1 tap' : '2 taps'}</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeMain !== 'home' && (
-          <div style={s.sectionBackRow} onClick={() => setActiveMain('home')}>← Home</div>
-        )}
-
         {activeMain === 'dispense' && (
           <div style={s.scrollArea}>
             {setupMode && (
@@ -537,14 +493,14 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
                 </div>
               )}
               {singleTap && (
-                <div style={{ fontSize: 13, color: '#8FB3AE', marginTop: 6 }}>{VALVE_NAME[availableValves[0]]}</div>
+                <div style={{ fontSize: 13, color: '#6B8CAE', marginTop: 6 }}>{VALVE_NAME[availableValves[0]]}</div>
               )}
               <div style={{ ...s.cardTitle, marginTop: 14 }}>Fill exactly this much, then tap Start</div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 {[1, 2, 5, 20].map((l) => (
                   <div key={l}
                     style={{ ...s.saveBtn, flex: 1,
-                      background: Number(calibTargetLiters) === l ? '#0AEFC4' : '#1F3E42',
+                      background: Number(calibTargetLiters) === l ? '#0AEFC4' : 'rgba(79,214,255,0.18)',
                       color: Number(calibTargetLiters) === l ? '#06201B' : '#EAF6F3' }}
                     onClick={() => setCalibTargetLiters(l)}>
                     {l}L
@@ -559,7 +515,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
                 onClick={handleFlowCalibrate}>
                 {flowCalibrating ? `Tap when exactly ${calibTargetLiters}L is reached` : 'Start calibration'}
               </div>
-              <div style={{ fontSize: 11, color: '#8FB3AE', marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: '#6B8CAE', marginTop: 8 }}>
                 Current: {pulsesPerLiter.toFixed ? pulsesPerLiter.toFixed(1) : pulsesPerLiter} pulses/liter
               </div>
             </div>
@@ -567,11 +523,11 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
             <div style={s.settingsLabel}>Payment collection</div>
             <div style={s.toggleRow}>
               <div>
-                <div style={s.toggleMain}>{paymentMode === 'razorpay' ? 'Razorpay (auto-dispense)' : 'MacroDroid (notification-based)'}</div>
+                <div style={s.toggleMain}>{paymentMode === 'razorpay' ? 'Razorpay (auto-dispense)' : 'UPI notification (auto-dispense)'}</div>
                 <div style={s.toggleSub}>
                   {paymentMode === 'razorpay'
                     ? 'Customer scans your QR and pays - water dispenses automatically'
-                    : 'Your phone reads UPI payment notifications, as before'}
+                    : 'Customer pays your dedicated UPI Business app directly - no button press needed, the amount alone triggers dispensing'}
                 </div>
               </div>
               <div style={{ ...s.toggle, ...(paymentMode === 'razorpay' ? s.toggleOn : {}) }}
@@ -581,21 +537,28 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
             </div>
 
             {paymentMode === 'razorpay' && (
-              <>
-                <div style={s.qrCard}>
-                  {qrImageUrl ? (
-                    <img src={qrImageUrl} alt="Payment QR" style={s.qrImage}
-                      onClick={() => setQrModalOpen(true)} />
-                  ) : (
-                    <div style={s.saveBtn} onClick={loadQr}>
-                      {qrLoading ? 'Loading...' : 'Show my QR code'}
-                    </div>
-                  )}
-                  {qrImageUrl && (
-                    <div style={{ fontSize: 12, color: '#555', marginTop: 8 }}>Tap the QR to view full size, print, or download</div>
-                  )}
-                </div>
+              <div style={s.qrCard}>
+                {qrImageUrl ? (
+                  <img src={qrImageUrl} alt="Payment QR" style={s.qrImage}
+                    onClick={() => setQrModalOpen(true)} />
+                ) : (
+                  <div style={s.saveBtn} onClick={loadQr}>
+                    {qrLoading ? 'Loading...' : 'Show my QR code'}
+                  </div>
+                )}
+                {qrImageUrl && (
+                  <div style={{ fontSize: 12, color: '#555', marginTop: 8 }}>Tap the QR to view full size, print, or download</div>
+                )}
+              </div>
+            )}
 
+            {(paymentMode === 'razorpay' || paymentMode === 'macrodroid') && (
+              <>
+                <div style={{ fontSize: 12, color: '#6B8CAE', margin: '4px 0 8px', lineHeight: 1.5 }}>
+                  Set a fixed price for each button. When a customer pays exactly that
+                  amount{paymentMode === 'razorpay' ? ' via your QR' : ' to your dedicated UPI app'}, that
+                  much water dispenses automatically - no physical button press needed.
+                </div>
                 {availableValves.map((v) => {
                   const slotIndices = (valves[v]?.presets || []).map((p) => p.slot_index).sort((a, b) => a - b);
                   return (
@@ -603,7 +566,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
                       <div style={s.cardTitle}>{VALVE_NAME[v]} - pay &amp; dispense prices</div>
                       {slotIndices.map((slot) => (
                         <div key={slot} style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
-                          <span style={{ fontSize: 12, color: '#8FB3AE', width: 20 }}>{slot + 1}.</span>
+                          <span style={{ fontSize: 12, color: '#6B8CAE', width: 20 }}>{slot + 1}.</span>
                           <input type="number" placeholder="₹ price" style={s.cfgInput}
                             value={priceEdits[v]?.[slot]?.price ?? ''}
                             onChange={(e) => setPriceEdits((p) => ({
@@ -673,8 +636,8 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
           <div style={s.scrollArea}>
             <div style={{ ...s.helpCard, textAlign: 'left' }}>
               <div style={{ fontWeight: 600, fontSize: 16 }}>{vendorName}</div>
-              <div style={{ fontSize: 12, color: '#8FB3AE' }}>{vendorPhone}</div>
-              <div style={{ fontSize: 13, color: '#8FB3AE', marginTop: 10 }}>Machine ID: {device?.name}</div>
+              <div style={{ fontSize: 12, color: '#6B8CAE' }}>{vendorPhone}</div>
+              <div style={{ fontSize: 13, color: '#6B8CAE', marginTop: 10 }}>Machine ID: {device?.name}</div>
             </div>
             {!isNativeApp() && (
               <div style={{ ...s.helpCard, marginTop: 12 }}>
@@ -697,7 +660,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
                   {KNOWN_UPI_APPS.map((app) => (
                     <div key={app.key}
                       style={{ ...s.saveBtn, flex: 1, textAlign: 'center',
-                        background: watchedAppPkg === app.packageName ? '#0AEFC4' : '#1F3E42',
+                        background: watchedAppPkg === app.packageName ? '#0AEFC4' : 'rgba(79,214,255,0.18)',
                         color: watchedAppPkg === app.packageName ? '#06201B' : '#EAF6F3' }}
                       onClick={async () => {
                         await setWatchedApp(app.packageName);
@@ -715,8 +678,8 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
                     doing so will trigger an unwanted dispense.
                   </div>
                 )}
-                <div style={{ ...s.callBtn, marginTop: 12, background: notifAccessEnabled ? '#1F3E42' : '#0AEFC4',
-                  color: notifAccessEnabled ? '#8FB3AE' : '#06201B' }}
+                <div style={{ ...s.callBtn, marginTop: 12, background: notifAccessEnabled ? 'rgba(79,214,255,0.18)' : '#0AEFC4',
+                  color: notifAccessEnabled ? '#6B8CAE' : '#06201B' }}
                   onClick={async () => {
                     await openNotificationSettings();
                     setTimeout(() => isNotificationAccessEnabled().then(setNotifAccessEnabled), 1500);
@@ -739,6 +702,22 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
           </div>
         )}
       </div>
+
+      <nav style={s.nav}>
+        {[
+          { key: 'dispense', label: 'Dispense', icon: '💧' },
+          { key: 'settings', label: 'Settings', icon: '⚙️' },
+          { key: 'profile', label: 'Profile', icon: '👤' },
+          { key: 'help', label: 'Contact', icon: '☎️' },
+        ].map((tab) => (
+          <div key={tab.key}
+            style={{ ...s.navItem, ...(activeMain === tab.key ? s.navItemActive : {}) }}
+            onClick={() => setActiveMain(tab.key)}>
+            <span style={{ fontSize: 15 }}>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </div>
+        ))}
+      </nav>
 
       {toast && <div style={s.toast}>{toast}</div>}
 
@@ -813,12 +792,12 @@ const styles = {
   content: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
   scrollArea: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 18px' },
 
-  setupBanner: { padding: '10px 12px', borderRadius: 12, background: '#163338',
+  setupBanner: { padding: '10px 12px', borderRadius: 12, background: 'rgba(79,214,255,0.12)',
     border: '1px solid #F2B84B', fontSize: 12, lineHeight: 1.4, marginBottom: 10 },
 
   tabs: { display: 'flex', gap: 8, marginBottom: 12 },
   tab: { flex: 1, padding: '9px 0', textAlign: 'center', borderRadius: 10, fontSize: 13,
-    fontWeight: 500, cursor: 'pointer', border: '1px solid #1F3E42', color: '#8FB3AE', background: '#11292E' },
+    fontWeight: 500, cursor: 'pointer', border: '1px solid rgba(79,214,255,0.18)', color: '#6B8CAE', background: 'rgba(20,32,54,0.55)' },
   tabActive: (valve) => ({
     background: valve === VALVE_COOLING
       ? 'linear-gradient(135deg, #4FD6FF, #1B8FE0)'
@@ -828,47 +807,47 @@ const styles = {
   }),
 
   panel: { display: 'flex', flexDirection: 'column', gap: 10 },
-  card: { border: '1px solid #1F3E42', borderRadius: 14, padding: '12px 14px', background: '#11292E' },
+  card: { border: '1px solid rgba(79,214,255,0.18)', borderRadius: 14, padding: '12px 14px', background: 'rgba(20,32,54,0.55)' },
   cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { fontSize: 14, fontWeight: 600 },
   volEdit: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600 },
   volInput: { width: 40, border: 'none', background: 'transparent', textAlign: 'right',
     fontSize: 13, fontWeight: 600, color: 'inherit' },
-  volUnit: { fontSize: 11, color: '#8FB3AE' },
+  volUnit: { fontSize: 11, color: '#6B8CAE' },
 
   canRow: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 },
   canStatus: { flex: 1 },
-  dcSub: { fontSize: 12, color: '#8FB3AE' },
+  dcSub: { fontSize: 12, color: '#6B8CAE' },
   dcPct: { fontSize: 17, fontWeight: 700, marginTop: 2 },
 
   actionBtn: { marginTop: 10, textAlign: 'center', padding: '12px 0', borderRadius: 12, fontSize: 14,
     fontWeight: 700, cursor: 'pointer', boxShadow: '0 3px 10px rgba(0,0,0,0.25)', letterSpacing: 0.2 },
 
   toggleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '10px 2px', borderBottom: '1px solid #1F3E42' },
+    padding: '10px 2px', borderBottom: '1px solid rgba(79,214,255,0.18)' },
   toggleMain: { fontSize: 13, fontWeight: 500 },
-  toggleSub: { fontSize: 11, color: '#8FB3AE' },
-  toggle: { width: 38, height: 22, borderRadius: 20, background: '#1F3E42', position: 'relative', cursor: 'pointer' },
+  toggleSub: { fontSize: 11, color: '#6B8CAE' },
+  toggle: { width: 38, height: 22, borderRadius: 20, background: 'rgba(79,214,255,0.18)', position: 'relative', cursor: 'pointer' },
   toggleOn: { background: '#0AEFC4' },
   toggleKnob: { width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: 3, transition: 'left 0.15s' },
   toggleKnobOn: { left: 19 },
 
-  settingsLabel: { fontSize: 12, color: '#8FB3AE', margin: '14px 0 8px', fontWeight: 500 },
-  cfgList: { borderRadius: 14, overflow: 'hidden', border: '1px solid #1F3E42' },
+  settingsLabel: { fontSize: 12, color: '#6B8CAE', margin: '14px 0 8px', fontWeight: 500 },
+  cfgList: { borderRadius: 14, overflow: 'hidden', border: '1px solid rgba(79,214,255,0.18)' },
   cfgRow: { display: 'flex', justifyContent: 'space-between', padding: '10px 12px',
-    borderBottom: '1px solid #1F3E42', cursor: 'pointer', background: '#11292E', fontSize: 13 },
+    borderBottom: '1px solid rgba(79,214,255,0.18)', cursor: 'pointer', background: 'rgba(20,32,54,0.55)', fontSize: 13 },
   cfgRowSelected: { background: 'rgba(35,193,163,0.16)', borderLeft: '3px solid #0AEFC4',
     paddingLeft: 11, fontWeight: 700 },
-  cfgVal: { color: '#8FB3AE', fontSize: 12 },
+  cfgVal: { color: '#6B8CAE', fontSize: 12 },
 
-  cfgEditor: { marginTop: 10, background: '#163338', borderRadius: 14, padding: '12px 14px' },
-  cfgInput: { flex: 1, background: '#11292E', border: '1px solid #1F3E42', borderRadius: 10,
+  cfgEditor: { marginTop: 10, background: 'rgba(79,214,255,0.12)', borderRadius: 14, padding: '12px 14px' },
+  cfgInput: { flex: 1, background: 'rgba(20,32,54,0.55)', border: '1px solid rgba(79,214,255,0.18)', borderRadius: 10,
     padding: '8px 10px', color: '#EAF6F3', fontSize: 13 },
   saveBtn: { padding: '8px 16px', borderRadius: 10, background: '#0AEFC4', color: '#06201B',
     fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
-  masterNote: { fontSize: 12, color: '#8FB3AE', lineHeight: 1.4, marginBottom: 8 },
+  masterNote: { fontSize: 12, color: '#6B8CAE', lineHeight: 1.4, marginBottom: 8 },
 
-  helpCard: { background: '#11292E', border: '1px solid #1F3E42', borderRadius: 14, padding: 16, textAlign: 'center' },
+  helpCard: { background: 'rgba(20,32,54,0.55)', border: '1px solid rgba(79,214,255,0.18)', borderRadius: 14, padding: 16, textAlign: 'center' },
   qrCard: { background: '#fff', borderRadius: 14, padding: 16, textAlign: 'center', marginTop: 4, marginBottom: 12 },
   qrImage: { width: 180, height: 180, cursor: 'pointer' },
   qrModalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 200,
@@ -877,15 +856,17 @@ const styles = {
   qrModalImage: { width: '100%', maxWidth: 280, height: 'auto' },
   qrModalHint: { fontSize: 12, color: '#666', marginTop: 12 },
   helpTitle: { fontSize: 14, fontWeight: 600 },
-  helpSub: { fontSize: 12, color: '#8FB3AE', marginTop: 4 },
+  helpSub: { fontSize: 12, color: '#6B8CAE', marginTop: 4 },
   helpNumber: { fontSize: 17, fontWeight: 600, marginTop: 10 },
   callBtn: { display: 'block', marginTop: 12, padding: '10px 0', borderRadius: 10, background: '#0AEFC4',
     color: '#06201B', fontWeight: 600, fontSize: 13, textDecoration: 'none', cursor: 'pointer' },
 
-  nav: { flexShrink: 0, display: 'flex', gap: 8, padding: '8px 10px', borderTop: '1px solid #1F3E42' },
-  navItem: { flex: 1, padding: '8px 0', textAlign: 'center', borderRadius: 10, fontSize: 12,
-    fontWeight: 500, cursor: 'pointer', color: '#8FB3AE', background: 'transparent', border: '1px solid #1F3E42' },
-  navItemActive: { background: '#163338', color: '#EAF6F3' },
+  nav: { flexShrink: 0, display: 'flex', gap: 6, padding: '10px 10px', borderTop: '1px solid rgba(79,214,255,0.15)',
+    background: 'rgba(10,18,32,0.6)' },
+  navItem: { flex: 1, padding: '8px 0', textAlign: 'center', borderRadius: 12, fontSize: 11,
+    fontWeight: 500, cursor: 'pointer', color: '#6B8CAE', display: 'flex', flexDirection: 'column',
+    alignItems: 'center', gap: 3 },
+  navItemActive: { background: 'rgba(79,214,255,0.12)', color: '#4FD6FF', boxShadow: '0 0 10px rgba(79,214,255,0.25)' },
 
   toast: { position: 'fixed', bottom: 70, left: '50%', transform: 'translateX(-50%)',
     background: '#EAF6F3', color: '#06201B', padding: '8px 16px', borderRadius: 10, fontSize: 12,
