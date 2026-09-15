@@ -7,6 +7,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // =====================================================================
 import { api } from '../api';
 import { getSocket, sendCommand } from '../socket';
+import { isNativeApp, isNotificationAccessEnabled, openNotificationSettings, clearVendorCredentials } from '../vendorBridge';
 
 // -----------------------------------------------------------------
 // Constants
@@ -47,7 +48,7 @@ function WaterJar({ id, pct, color }) {
   );
 }
 
-export default function VendorHome({ device: deviceProp, vendor, onBack }) {
+export default function VendorHome({ device: deviceProp, vendor, onBack, onLogout }) {
   const deviceId = deviceProp?.device_id || deviceProp?.id;
   const vendorId = vendor?.id;
   const vendorName = vendor?.name;
@@ -59,7 +60,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   const [online, setOnline] = useState(false);
   const [statusByValve, setStatusByValve] = useState({}); // live device_status per valve
 
-  const [activeMain, setActiveMain] = useState('dispense'); // dispense | settings | help | profile
+  const [activeMain, setActiveMain] = useState('home'); // home | dispense | settings | help | profile
   const [activeValve, setActiveValve] = useState(VALVE_NORMAL);
 
   const [setupMode, setSetupMode] = useState(false);
@@ -77,6 +78,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   const [pulsesPerLiter, setPulsesPerLiter] = useState(240);
   const [calibTargetLiters, setCalibTargetLiters] = useState(20);
   const [flowCalibrating, setFlowCalibrating] = useState(false);
+  const [notifAccessEnabled, setNotifAccessEnabled] = useState(null); // null = unknown/not native
 
   const toastTimer = useRef(null);
   const showToast = (msg) => {
@@ -84,6 +86,12 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 2200);
   };
+
+  useEffect(() => {
+    if (isNativeApp()) {
+      isNotificationAccessEnabled().then(setNotifAccessEnabled);
+    }
+  }, []);
 
   // ---------------- Initial load ----------------
   useEffect(() => {
@@ -403,17 +411,69 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
   return (
     <div style={s.phone}>
       <header style={s.header}>
-        <div>
-          {onBack && <div style={s.backLink} onClick={onBack}>← Devices</div>}
-          <div style={s.vendorName}>{vendorName || device?.vendor_name || 'Vendor'}</div>
+        <div style={s.headerLeft}>
+          <div style={s.headerBadge}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2C12 2 5 10.5 5 15a7 7 0 0014 0C19 10.5 12 2 12 2z" stroke="#4FD6FF" strokeWidth="1.8" />
+            </svg>
+          </div>
+          <div>
+            {onBack && <div style={s.backLink} onClick={onBack}>← Devices</div>}
+            <div style={s.vendorName}>{vendorName || device?.vendor_name || 'Vendor'}</div>
+            <div style={s.vendorSub}>Sol Electronics</div>
+          </div>
         </div>
         <div style={{ ...s.statusPill, ...(online ? {} : s.statusOffline) }}>
-          <span style={{ ...s.dot, background: online ? '#0AEFC4' : '#E8615F' }} />
-          {online ? 'Online' : 'Offline'}
+          <span style={{ ...s.dot, background: online ? '#3CFFD6' : '#E8615F' }} />
+          {online ? 'System Online' : 'Offline'}
         </div>
       </header>
 
       <div style={s.content}>
+        {activeMain === 'home' && (
+          <div style={s.scrollArea}>
+            <div style={s.homeGrid}>
+              {[
+                { key: 'dispense', label: 'Dispense', icon: '💧', color: '#3CFFD6' },
+                { key: 'settings', label: 'Settings', icon: '⚙️', color: '#4FD6FF' },
+                { key: 'help', label: 'Help', icon: '☎️', color: '#F7C15C' },
+                { key: 'profile', label: 'Profile', icon: '👤', color: '#B18CFF' },
+              ].map((card) => (
+                <div key={card.key} style={s.homeCard} onClick={() => setActiveMain(card.key)}>
+                  <div style={{ ...s.homeIconBadge, boxShadow: `0 0 16px ${card.color}55`, borderColor: `${card.color}66` }}>
+                    <span style={{ fontSize: 22 }}>{card.icon}</span>
+                  </div>
+                  <div style={s.homeCardLabel}>{card.label}</div>
+                  <span style={s.homeCardChevron}>›</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={s.statsBar}>
+              <div style={s.statItem}>
+                <div style={s.statLabel}>Connected</div>
+                <div style={s.statValue}>{online ? 'WiFi / Internet' : 'Offline'}</div>
+              </div>
+              <div style={s.statItem}>
+                <div style={s.statLabel}>Machine</div>
+                <div style={s.statValue}>{device?.name || '—'}</div>
+              </div>
+              <div style={s.statItem}>
+                <div style={s.statLabel}>Payment</div>
+                <div style={s.statValue}>{paymentMode === 'razorpay' ? 'Razorpay' : 'MacroDroid'}</div>
+              </div>
+              <div style={s.statItem}>
+                <div style={s.statLabel}>Taps</div>
+                <div style={s.statValue}>{singleTap ? '1 tap' : '2 taps'}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeMain !== 'home' && (
+          <div style={s.sectionBackRow} onClick={() => setActiveMain('home')}>← Home</div>
+        )}
+
         {activeMain === 'dispense' && (
           <div style={s.scrollArea}>
             {setupMode && (
@@ -614,25 +674,48 @@ export default function VendorHome({ device: deviceProp, vendor, onBack }) {
               <div style={{ fontSize: 12, color: '#8FB3AE' }}>{vendorPhone}</div>
               <div style={{ fontSize: 13, color: '#8FB3AE', marginTop: 10 }}>Machine ID: {device?.name}</div>
             </div>
+            {!isNativeApp() && (
+              <div style={{ ...s.helpCard, marginTop: 12 }}>
+                <div style={s.helpTitle}>Download the app</div>
+                <div style={s.helpSub}>Add Sol Electronics to your home screen for direct, already-logged-in access.</div>
+                <div style={s.callBtn} onClick={handleInstallClick}>
+                  Download app
+                </div>
+              </div>
+            )}
+
+            {isNativeApp() && (
+              <div style={{ ...s.helpCard, marginTop: 12 }}>
+                <div style={s.helpTitle}>Automatic UPI payments</div>
+                <div style={s.helpSub}>
+                  {notifAccessEnabled
+                    ? 'Notification access is on - GPay/PhonePe payments trigger dispensing automatically.'
+                    : 'Turn on notification access once so GPay/PhonePe payments trigger dispensing automatically.'}
+                </div>
+                <div style={{ ...s.callBtn, background: notifAccessEnabled ? '#1F3E42' : '#0AEFC4',
+                  color: notifAccessEnabled ? '#8FB3AE' : '#06201B' }}
+                  onClick={async () => {
+                    await openNotificationSettings();
+                    setTimeout(() => isNotificationAccessEnabled().then(setNotifAccessEnabled), 1500);
+                  }}>
+                  {notifAccessEnabled ? 'Notification access is on ✓' : 'Turn on notification access'}
+                </div>
+              </div>
+            )}
+
             <div style={{ ...s.helpCard, marginTop: 12 }}>
-              <div style={s.helpTitle}>Download the app</div>
-              <div style={s.helpSub}>Add Sol Electronics to your home screen for direct, already-logged-in access.</div>
-              <div style={s.callBtn} onClick={handleInstallClick}>
-                Download app
+              <div
+                style={{ ...s.callBtn, background: 'transparent', border: '1px solid #E8615F', color: '#E8615F' }}
+                onClick={async () => {
+                  await clearVendorCredentials();
+                  onLogout && onLogout();
+                }}>
+                Sign out
               </div>
             </div>
           </div>
         )}
       </div>
-
-      <nav style={s.nav}>
-        {['dispense', 'settings', 'help', 'profile'].map((tab) => (
-          <div key={tab} style={{ ...s.navItem, ...(activeMain === tab ? s.navItemActive : {}) }}
-            onClick={() => setActiveMain(tab)}>
-            {tab[0].toUpperCase() + tab.slice(1)}
-          </div>
-        ))}
-      </nav>
 
       {toast && <div style={s.toast}>{toast}</div>}
 
@@ -668,19 +751,41 @@ const styles = {
   phone: {
     height: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto',
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
-    background: 'linear-gradient(180deg,#0F262A,#0B1E22 40%)', color: '#EAF6F3',
+    background: 'radial-gradient(circle at 20% 0%, #132743 0%, #0A1220 45%, #060B14 100%)', color: '#EAF6F3',
     fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif',
   },
   header: {
-    flexShrink: 0, padding: '16px 20px', borderBottom: '1px solid #1F3E42',
+    flexShrink: 0, padding: '16px 20px', borderBottom: '1px solid rgba(79,214,255,0.15)',
     display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
   },
+  headerLeft: { display: 'flex', alignItems: 'center', gap: 10 },
+  headerBadge: { width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', background: 'rgba(79,214,255,0.12)', border: '1px solid rgba(79,214,255,0.35)',
+    boxShadow: '0 0 14px rgba(79,214,255,0.35)' },
   vendorName: { fontSize: 18, fontWeight: 600 },
-  backLink: { fontSize: 12, color: '#8FB3AE', marginBottom: 4, cursor: 'pointer' },
-  statusPill: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500,
-    padding: '5px 10px', borderRadius: 20, background: 'rgba(35,193,163,0.12)', color: '#0AEFC4' },
-  statusOffline: { background: 'rgba(232,97,95,0.12)', color: '#E8615F' },
+  vendorSub: { fontSize: 11, color: '#6B8CAE', marginTop: 1 },
+  backLink: { fontSize: 12, color: '#6B8CAE', marginBottom: 4, cursor: 'pointer' },
+  statusPill: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600,
+    padding: '6px 12px', borderRadius: 20, background: 'rgba(60,255,214,0.10)', color: '#3CFFD6',
+    border: '1px solid rgba(60,255,214,0.35)' },
+  statusOffline: { background: 'rgba(232,97,95,0.10)', color: '#E8615F', border: '1px solid rgba(232,97,95,0.35)' },
   dot: { width: 7, height: 7, borderRadius: '50%' },
+
+  homeGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 4 },
+  homeCard: { background: 'linear-gradient(145deg, rgba(30,50,80,0.55), rgba(15,25,45,0.55))',
+    border: '1px solid rgba(79,214,255,0.18)', borderRadius: 16, padding: '16px 14px',
+    display: 'flex', flexDirection: 'column', gap: 10, cursor: 'pointer', position: 'relative' },
+  homeIconBadge: { width: 46, height: 46, borderRadius: '50%', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', background: 'rgba(255,255,255,0.04)', border: '1px solid' },
+  homeCardLabel: { fontSize: 14, fontWeight: 600 },
+  homeCardChevron: { position: 'absolute', top: 14, right: 14, color: '#4F6B8A', fontSize: 16 },
+
+  statsBar: { display: 'flex', marginTop: 18, background: 'rgba(20,32,54,0.6)',
+    border: '1px solid rgba(79,214,255,0.15)', borderRadius: 14, padding: '12px 6px' },
+  statItem: { flex: 1, textAlign: 'center', borderRight: '1px solid rgba(79,214,255,0.12)' },
+  statLabel: { fontSize: 10, color: '#6B8CAE', marginBottom: 3 },
+  statValue: { fontSize: 11, fontWeight: 600, color: '#EAF6F3' },
+  sectionBackRow: { fontSize: 13, color: '#4FD6FF', cursor: 'pointer', marginBottom: 10, fontWeight: 500 },
 
   content: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
   scrollArea: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 18px' },
