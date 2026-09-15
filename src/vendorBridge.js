@@ -41,3 +41,28 @@ export async function isNotificationAccessEnabled() {
     return false;
   }
 }
+
+export const KNOWN_UPI_APPS = [
+  { key: 'gpay', label: 'Google Pay', packageName: 'com.google.android.apps.nbu.paisa.user' },
+  { key: 'phonepe', label: 'PhonePe', packageName: 'com.phonepe.app' },
+];
+
+export async function setWatchedApp(packageName) {
+  if (!isNativeApp()) return;
+  try {
+    await VendorBridge.setWatchedApp({ packageName });
+  } catch (e) {
+    console.warn('setWatchedApp failed', e);
+  }
+}
+
+export async function getWatchedApp() {
+  if (!isNativeApp()) return null;
+  try {
+    const result = await VendorBridge.getWatchedApp();
+    return result?.packageName || null;
+  } catch (e) {
+    console.warn('getWatchedApp failed', e);
+    return null;
+  }
+}
