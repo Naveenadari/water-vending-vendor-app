@@ -43,8 +43,10 @@ export async function isNotificationAccessEnabled() {
 }
 
 export const KNOWN_UPI_APPS = [
-  { key: 'gpay', label: 'Google Pay', packageName: 'com.google.android.apps.nbu.paisa.user' },
-  { key: 'phonepe', label: 'PhonePe', packageName: 'com.phonepe.app' },
+  { key: 'gpay_business', label: 'Google Pay for Business', packageName: 'com.google.android.apps.nbu.paisa.merchant' },
+  { key: 'phonepe_business', label: 'PhonePe Business', packageName: 'com.phonepe.app.business' },
+  { key: 'paytm_business', label: 'Paytm for Business', packageName: 'com.paytm.business' },
+  { key: 'bharatpe', label: 'BharatPe', packageName: 'com.bharatpe.app' },
 ];
 
 export async function setWatchedApp(packageName) {
