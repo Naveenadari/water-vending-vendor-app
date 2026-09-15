@@ -65,6 +65,7 @@ export default function App() {
           device={currentDevice}
           vendor={vendor}
           onBack={() => setScreen('home')}
+          onLogout={handleLogout}
         />
       </div>
     );
