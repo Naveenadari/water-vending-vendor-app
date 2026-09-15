@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // =====================================================================
 import { api } from '../api';
 import { getSocket, sendCommand } from '../socket';
-import { isNativeApp, isNotificationAccessEnabled, openNotificationSettings, clearVendorCredentials } from '../vendorBridge';
+import { isNativeApp, isNotificationAccessEnabled, openNotificationSettings, clearVendorCredentials, KNOWN_UPI_APPS, setWatchedApp, getWatchedApp } from '../vendorBridge';
 
 // -----------------------------------------------------------------
 // Constants
@@ -79,6 +79,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
   const [calibTargetLiters, setCalibTargetLiters] = useState(20);
   const [flowCalibrating, setFlowCalibrating] = useState(false);
   const [notifAccessEnabled, setNotifAccessEnabled] = useState(null); // null = unknown/not native
+  const [watchedAppPkg, setWatchedAppPkg] = useState(null);
 
   const toastTimer = useRef(null);
   const showToast = (msg) => {
@@ -90,6 +91,7 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
   useEffect(() => {
     if (isNativeApp()) {
       isNotificationAccessEnabled().then(setNotifAccessEnabled);
+      getWatchedApp().then(setWatchedAppPkg);
     }
   }, []);
 
@@ -685,14 +687,35 @@ export default function VendorHome({ device: deviceProp, vendor, onBack, onLogou
             )}
 
             {isNativeApp() && (
-              <div style={{ ...s.helpCard, marginTop: 12 }}>
+              <div style={{ ...s.helpCard, marginTop: 12, textAlign: 'left' }}>
                 <div style={s.helpTitle}>Automatic UPI payments</div>
                 <div style={s.helpSub}>
-                  {notifAccessEnabled
-                    ? 'Notification access is on - GPay/PhonePe payments trigger dispensing automatically.'
-                    : 'Turn on notification access once so GPay/PhonePe payments trigger dispensing automatically.'}
+                  Pick ONE UPI app to dedicate to this machine. Only payments received on that
+                  app trigger dispensing - other apps are ignored, so nothing else clashes.
                 </div>
-                <div style={{ ...s.callBtn, background: notifAccessEnabled ? '#1F3E42' : '#0AEFC4',
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  {KNOWN_UPI_APPS.map((app) => (
+                    <div key={app.key}
+                      style={{ ...s.saveBtn, flex: 1, textAlign: 'center',
+                        background: watchedAppPkg === app.packageName ? '#0AEFC4' : '#1F3E42',
+                        color: watchedAppPkg === app.packageName ? '#06201B' : '#EAF6F3' }}
+                      onClick={async () => {
+                        await setWatchedApp(app.packageName);
+                        setWatchedAppPkg(app.packageName);
+                        showToast(`${app.label} selected - keep its dedicated amounts unused elsewhere`);
+                      }}>
+                      {app.label}
+                    </div>
+                  ))}
+                </div>
+                {watchedAppPkg && (
+                  <div style={{ fontSize: 11, color: '#F2B84B', marginTop: 10, lineHeight: 1.5 }}>
+                    ⚠️ Tell the vendor: the exact amounts set for this machine's buttons must never
+                    be used for anything else on {KNOWN_UPI_APPS.find(a => a.packageName === watchedAppPkg)?.label} -
+                    doing so will trigger an unwanted dispense.
+                  </div>
+                )}
+                <div style={{ ...s.callBtn, marginTop: 12, background: notifAccessEnabled ? '#1F3E42' : '#0AEFC4',
                   color: notifAccessEnabled ? '#8FB3AE' : '#06201B' }}
                   onClick={async () => {
                     await openNotificationSettings();
